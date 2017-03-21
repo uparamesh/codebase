@@ -1,0 +1,89 @@
+rvm installation
+1.sudo apt-get update
+2.sudo apt-get install curl
+3.\curl -L https://get.rvm.io | bash -s stable
+4.source ~/.rvm/scripts/rvm
+5.rvm requirements
+6.sudo apt-get install build-essential openssl libreadline6 libreadline6-dev curl git-core zlib1g zlib1g-dev libssl-dev libyaml-dev libsqlite3-dev sqlite3 libxml2-dev libxslt-dev autoconf libc6-dev ncurses-dev automake libtool bison subversion pkg-config
+
+ruby installation
+
+1.rvm install 1.9.3
+2.rvm use 1.9.3 --default
+
+path setting
+1.nano ~/.bashrc
+
+PATH=$PATH:$HOME/.rvm/bin # Add RVM to PATH for scripting
+source ~/.rvm/scripts/rvm
+[[ -s "/home/Ravi/.rvm/scripts/rvm" ]] && source "/home/Ravi/.rvm/scripts/rvm"
+
+copy this and paste at end
+
+2.create one folder(mkdir pratise)
+3.cd pratise
+4.touch .rvmrc
+5.nano .rvmrc
+
+rvm use 1.9.3-p362(lastest version)@pratise
+type this
+
+6.rvm gemset create pratise
+
+
+to check current gemset
+
+rvm-prompt
+
+ctrl+shift+r clear cache & restart
+
+adding dump file to db:
+
+mysql -u root -p -h localhost ixentec_develop(dbname) < database_dump.sql
+
+mysqldump -u root -p algalla_dev > database_dump_19_04_16.sql
+
+mysql -u root -p -h localhost algalla_dev > database_dump_19_04_16.sql
+
+errors:
+-------
+
+An error occurred while installing rake (10.4.2)
+
+ans. bundle install --path vendor/cache
+ 
+bundle exec rake db:create
+Access denied for user 'root'@'localhost' (using password: YES)Please provide the root password for your mysql installation
+
+
+
+ruby-2.0.0-p643 [ i686 ]
+ruby-2.0.0-p645 [ i686 ] - Grupofis
+ruby-2.1.1 [ i686 ] -Ixentech
+ruby-1.9.3-p547] -carbanrally
+
+
+
+WARNING: You have '~/.profile' file, you might want to load it,
+    to do that add the following line to '/home/paramesh/.bash_profile':
+
+      source ~/.profile
+
+
+<%= link_to "Sign in with Facebook", "/auth/facebook" %>
+You also have to create some callback routes, and there are 2 ways you could do this. You can either:
+
+Define a route that catches all callbacks and redirects to a single controller's action:
+
+get "/auth/:provider/callback" => "authentications#create"
+You can then use params[:provider] to get the name of the provider. Using an if you could then do things differently depending on the provider.
+
+Or define a route for every single provider where you can point to different actions in your controller:
+
+get "/auth/twitter/callback" => "authentications#twitter"
+get "/auth/facebook/callback" => "authentications#facebook"
+These routes can also be condensed in a single route:
+
+get "/auth/:action/callback",
+  :to => "authentications",
+  :constraints => { :action => /twitter|facebook/ }

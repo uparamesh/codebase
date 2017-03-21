@@ -1,0 +1,194 @@
+gem "savon"
+ 
+class Uniware
+	def self.client
+		client = Savon.client(
+      wsdl: APP_CONFIG['uniware']['wsdl_url'],
+      wsse_auth: [APP_CONFIG['uniware']['api_key'], APP_CONFIG['uniware']['api_token']]
+    )
+	end
+
+	def self.post_item_type(product)
+		product.variants.each do |variant|
+      category_name = ProductType.find(product.product_type_id).name
+      res = client.call(:create_or_edit_item_type,
+        message: {
+        	'CategoryCode'=> category_name, 'ItemSKU' => variant.sku,
+        	'Name' => variant.name, 'Length' => variant.length,
+        	'Width' => variant.width, 'Height' => (variant.heel_height.empty? || variant.heel_height == 'NA') ? 0 : variant.heel_height,
+        	'Weight' => variant.weight, 'color' => variant.color
+        }
+      )
+      unless res.body[:create_or_edit_item_type_response][:successful]
+      	if res.body[:create_or_edit_item_type_response][:errors][:error].kind_of?(Array)
+      		errors = []
+	    		res.body[:create_or_edit_item_type_response][:errors][:error].map do |e|
+	    			errors << e[:@description]
+	      	end
+	      	return errors
+	      else
+	      	errors = { status: false }
+	      	errors.merge!(msg: res.body[:create_or_edit_item_type_response][:errors][:error][:@description])
+	      	return errors
+	      end
+      end
+    end
+    return { status: true }
+	end
+
+	def self.post_order(order)
+		address = order.ship_address
+		res = client.call(:create_sale_order,
+		 	message: {
+			 	'SaleOrder' => {
+			 		'Code' => order.number,
+			 		'DisplayOrderCode' => order.number,
+			 		'CashOnDelivery' =>  order.payment_type.eql?("cod") ? '1' : '0',
+			 		# 'Channel' => 'CUSTOM',
+			 		# 'NotificationEmail' => 'test@carmatec.com',
+			 		# 'NotificationMobile' => '9988272727',
+			 		'Addresses' => {
+				 		'Address' => {
+				 			:@id => 1,
+				 			'Name' => address.name,
+				 			'AddressLine1' => address.present? ? address.address1 : 'N/A',
+				 			'AddressLine2' => address.present? ? address.address2 : 'N/A',
+				 			'City' => address.city,
+				 			'State' => address.state.name,
+				 			'Country' => address.country.present? ? address.country.name : address.state.country.name,
+				 			'Pincode' => address.zip_code,
+				 			'Phone' => address.mobile_num
+				 		}
+				 	},
+				 	'ShippingAddress' => { :@ref => 1 },
+				 	#'SaleOrderItems' => items(order)
+				 	'SaleOrderItems' => {
+				 		'SaleOrderItem' => items(order)
+				 	}
+		 		}
+		 	}
+	 	)
+ 		if res.body[:create_sale_order_response][:successful]
+	 		return { status: true }
+    else
+    	errors = []
+      if res.body[:create_sale_order_response][:errors][:error].kind_of?(Array)
+      	res.body[:create_sale_order_response][:errors][:error].map do |e|
+      		errors << e[:@description]
+     		end
+     	else
+     		errors << res.body[:create_sale_order_response][:errors][:error][:@description]
+     	end
+     	return errors
+    end
+	end
+
+	def self.full_order_cancel(order_num, items)
+		res = client.call(:cancel_sale_order,
+      message: {
+      	'SaleOrder' => {
+      		'Code' => order_num, #order.number,
+      		'CancellationReason' => 'reason',
+      		'SaleOrderItems' => {
+				 		'SaleOrderItem' => cancel_order(items)
+				 	}
+      	} 
+      }
+    )
+	end
+
+	def self.return_items(order_num, items)
+		order = Order.find(order_num)
+		address = order.ship_address
+		items.each do |item_code|
+			item = OrderItem.find_by_code(item_code)
+			v_id = Variant.find(item.variant_id).product.user.vendor_id
+			client = Savon.client(
+	      wsdl: APP_CONFIG['uniware']['wsdl_url']+"?facility=#{v_id}",
+	      endpoint: "https://divazea.unicommerce.com/services/soap/?version=1.8&facility="+"#{v_id}",
+	      wsse_auth: [APP_CONFIG['uniware']['api_key'], APP_CONFIG['uniware']['api_token']]
+	    )
+			res = client.call(:create_reverse_pickup,
+	      message: {
+	      	'SaleOrderCode' => order_num,
+	      	'ReversePickupItems' => {
+	      		'ReversePickupItem' => return_order_items(item_code)
+	      	},
+	      	'Address' => {
+			 			:@id => 6,
+			 			'Name' => address.name,
+			 			'AddressLine1' => address.present? ? address.address1 : 'N/A',
+			 			'AddressLine2' => address.present? ? address.address2 : 'N/A',
+			 			'City' => address.city,
+			 			'State' => address.state.name,
+			 			'Country' => address.country.present? ? address.country.name : address.state.country.name,
+			 			'Pincode' => address.zip_code,
+			 			'Phone' => address.mobile_num
+			 		},
+			 		'ActionCode' => 'WAC'
+	      }
+	    )
+		end
+	end
+
+	private
+	def self.items(order)
+		items = []
+		combo_ids=[]
+		combo_ids.uniq
+		#hash1 = {}
+		#hash1.compare_by_identity
+		order.order_items.map do |item|
+			user = Variant.find(item.variant_id).product.user
+			if user.vendor_id.present?
+				vendor_id = user.vendor_id
+			else
+				vendor_id = 'DUMMY051'
+			end
+			#item.quantity.times do |i|
+				items << {
+					'Code' => item.code, #+"-"+"#{i+1}", 
+		 			'ItemSKU' => item.variant.sku,
+		 			'TotalPrice' => item.price.to_f,
+		 			'ShippingMethodCode' => 'STD',
+		 			'SellingPrice' => item.deal.present? ? item.item_price(combo_ids) : item.price,
+		 			'ShippingCharges' => 0,
+		 			'Discount' => item.deal.present? ? item.discount_amt : 0,
+		 			'FacilityCode' => vendor_id
+		 		}
+		 		combo_ids << item.deal_id if item.deal.present? && item.deal.deal_type=='combo'
+		 	#end
+ 		end
+ 		combo_ids=[]
+ 		#hash.each_index { |index| hash1['SaleOrderItem']=hash[index] }
+ 		return items
+	end
+
+	def self.cancel_order(order)
+		items = []
+ 		order.each do |item|
+ 			items << { 'Code' => item }
+ 		end
+ 		return items
+ 		# order.order_items.map do |item|
+		# 	item.quantity.times do |i|
+		# 		items << {
+		# 			'Code' => item.code
+		#  		}
+		#  	end
+ 	# 	end
+	end
+
+	def self.return_order_items(item)
+		#a = []
+ 		#items.each do |item|
+		#a << 
+		{
+			'SaleOrderItemCode' => item,
+			'Reason' => 'test'
+		}
+ 		#end
+ 		#return a
+	end
+end
+

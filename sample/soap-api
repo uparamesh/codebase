@@ -1,0 +1,93 @@
+gem "wash-out"
+
+
+class SoapServiceController < ApplicationController
+  soap_service namespace: 'urn:WashOut'
+  soap_service namespace: "urn:wash_out", wsse_username: APP_CONFIG['soap_api']['api_key'],
+  						wsse_password: APP_CONFIG['soap_api']['api_token']
+
+  soap_action "update_order",
+            :args   => { 
+            	:order => {
+            		:code => :string,
+            		:status => :string,
+                :reason => :string,
+            		:orderitems => [
+            			:code => :string,
+                  :awbnum => :string,
+                  :status => :string
+          			]
+        			}
+      			},
+            :return => { :status => :string, :message => :string }
+
+  def update_order
+  	#a = []
+    begin
+      order = Order.find(params[:order][:code])
+      #order.update_attribute(:state, params[:order][:status])
+      if order.present?
+        params[:order][:orderitems].each do |item|
+          oi = OrderItem.find_by_code(item[:code])
+          raise "OrderItem '#{item[:code]}' does not exist" if !oi.present?
+          oi.update_attribute(:ready_to_ship, true)
+          oi.update_attribute(:state, item[:status])
+          if oi.state == 'DISPATCHED'
+            c = Courier.find_or_create_by(aws_no: item[:awbnum])
+            oi.update_attribute(:courier_id, c.id)
+            variant = Variant.find(oi.variant_id)
+            merchant = variant.product.user
+            product = variant.product
+            MerchantMailer.order_dispatched_mail(order, product, merchant).deliver
+            UserMailer.order_dispatched_mail(order, item).deliver
+          end
+          raise "Failed to update order item '#{item[:code]}' status" if !oi
+        end
+      end
+      render :soap => { :status => "Success", :message => "Order has been #{order.state} successfully" }
+    rescue => e
+      render :soap => { :status => "Failed", :message => e.message }
+    end
+
+  # 	item_codes = params[:order][:orderitems][:code]
+  # 	item_codes.each { |i| a << i.split('-')[0] }
+  # 	items = OrderItem.where(:code => a.uniq)
+  # 	begin
+  #     order = Order.find(params[:order][:code])
+  #     order.update_attribute(:state, params[:order][:status])
+  # 		items.each { |o| o.update_attribute(:ready_to_ship, true) } if params[:order][:status] == 'READY_TO_SHIP'
+  # 		render :soap => {:status => "Success", :message => "order has been #{order.state}" }
+		# rescue => e
+		# 	render :soap => { :status => "Failed", :message => e.message }
+		# end
+  end
+
+  soap_action "update_inventory",
+  				:args => {
+  					:inventories => {
+  						:inventory => [
+  							:skucode => :string,
+  							:total => :integer,
+  							:available => :integer
+  						]
+  					}
+  				},
+  				:return => { :status => :string, :message => :string }
+
+	def update_inventory
+		params[:inventories][:inventory].each do |i|
+			begin
+				var = Variant.find_by_sku(i[:skucode])
+        raise "Invalid sku code '#{i[:skucode]}'" if !var.present?
+				inv = var.inventory.update_attributes(count_on_hand: i[:total],
+				count_pending_to_customer: i[:total] - i[:available],
+				count_pending_from_supplier: i[:available])
+        raise "Failed to update Inventory" if !inv
+				render :soap => { :status => "Success", :message => "Inventories has been updated successfully" }
+			rescue => e
+				render :soap => { :status => "Failed", :message => e.message }
+			end
+		end
+	end
+end
+

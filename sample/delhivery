@@ -1,0 +1,119 @@
+gem "typhoeus"
+
+class Delhivery
+	URL = "https://track.delhivery.com"
+	TEST_URL = "https://test.delhivery.com"
+
+	# To fetch waybill number from delhivery
+	def self.fetch_waybill
+		req = Typhoeus::Request.new(URL+"/waybill/api/fetch/json/",
+      userpwd: "DIVAZEAECOMMERCE:delhivery123",
+      params: { :cl => "DIVAZEAECOMMERCE", :token => "04e0b65aa433a319777f37e4ce19a2783600cff2" })
+		req.run
+		req.response.body.gsub!(/"/,'')
+	end
+
+	#To post order/package to delhivery
+	def self.create_package(order, items)
+		data = package_data(order, items)
+		req = Typhoeus::Request.new(
+      URL+"/cmu/push/json/",
+      method: :post,
+      userpwd: "DIVAZEAECOMMERCE:delhivery123",
+      params: {"token" => "04e0b65aa433a319777f37e4ce19a2783600cff2"},
+      body: {'data' => data.to_json, 'format'=>'json'},
+      headers: {'Content-Type' => 'application/x-www-form-urlencoded'}
+    )
+    req.run    
+    puts ActiveSupport::JSON.decode(req.response.body)
+	end
+
+	#To fetch pincodes from delhivery and store it to db.
+	def self.fetch_pincodes
+		req = Typhoeus::Request.new(
+			URL+"/c/api/pin-codes/json/",
+      params: {"token" => "04e0b65aa433a319777f37e4ce19a2783600cff2"}
+      )
+		req.run
+		res = ActiveSupport::JSON.decode(req.response.body)
+		res["delivery_codes"].each do |pc|
+			p_code = DelhiveryPinCode.new			
+			p_code.district = pc["postal_code"].values[0]
+			p_code.pin = pc["postal_code"].values[1]
+			p_code.max_amount = pc["postal_code"].values[2]
+			p_code.pre_paid = pc["postal_code"].values[3]
+			p_code.cash = pc["postal_code"].values[4]
+			p_code.pickup = pc["postal_code"].values[5]
+			p_code.repl = pc["postal_code"].values[6]
+			p_code.cod = pc["postal_code"].values[7]
+			p_code.sort_code = pc["postal_code"].values[8]
+			p_code.is_oda = pc["postal_code"].values[9]
+			p_code.state_code = pc["postal_code"].values[10]
+			p_code.max_weight = pc["postal_code"].values[11]
+			p_code.save
+		end
+	end
+
+	#To track the orders from delhivery
+	def self.track_order(wbnum)
+		req = Typhoeus::Request.new(URL+"/api/packages/json/",
+      userpwd: "DIVAZEAECOMMERCE:delhivery123",
+      params: {
+      	token: "04e0b65aa433a319777f37e4ce19a2783600cff2",
+      	waybill: wbnum
+  	 	})
+		req.run		
+		ActiveSupport::JSON.decode(req.response.body)['ShipmentData'][0]['Shipment']['Status']
+	end
+
+  private
+	def self.package_data(order, code)
+		user = order.user
+		bill_add = order.bill_address
+    item = OrderItem.find_by_code(code)
+    merchant = item.variant.product.user
+		{
+      # "dispatch_date"=>"",
+      # "pickup_location"=> {
+      #   "add"=> merchant.address, "city"=> merchant.city,
+      #   "country"=> merchant.country, "name"=> merchant.title,
+      #   "phone"=> merchant.phone, "pin"=> merchant.pin_code,
+      # },
+      "shipments"=> [items_list(order, item, merchant)]
+    }
+	end
+
+  def self.items_list(order, item, merchant)
+    ship_add = order.ship_address
+    #a = []
+    #items.each do |i|
+    #item = OrderItem.find_by_code(item)
+    {
+      #"waybill"=> "698410010426",#Delhivery.fetch_waybill
+      "name"=> ship_add.present? ? ship_add.name : "N/A",
+      "order"=> order.number,
+      "products_desc"=> "",
+      "Volumetric":0.00,
+      "billable_weight":0.00,
+      #"supplier":"Fuerza Retail private Limted",
+      "weight":0.00,
+      "order_date"=> order.created_at.to_time.iso8601,
+      "payment_mode"=> "Pickup",
+      "total_amount"=> item.price,
+      "cod_amount"=> item.price,
+      "add"=> ship_add.present? ? ship_add.address1 : "N/A",
+      "city"=> ship_add.present? ? ship_add.city : "N/A",
+      "state"=> ship_add.present? ? ship_add.state.name : "N/A",
+      "country"=> ship_add.present? ? ship_add.state.country.name : "N/A",
+      "phone"=> ship_add.mobile_num,
+      "pin"=> ship_add.present? ? ship_add.zip_code : "N/A",
+      "return_add"=> merchant.address,
+      "return_city"=> merchant.city,
+      "return_country"=> merchant.country,
+      "return_name"=> merchant.title,
+      "return_phone"=> merchant.phone,
+      "return_pin"=> merchant.pin_code,
+      "return_state"=> merchant.state
+    }
+  end
+end
