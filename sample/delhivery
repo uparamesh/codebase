@@ -7,8 +7,8 @@ class Delhivery
 	# To fetch waybill number from delhivery
 	def self.fetch_waybill
 		req = Typhoeus::Request.new(URL+"/waybill/api/fetch/json/",
-      userpwd: "DIVAZEAECOMMERCE:delhivery123",
-      params: { :cl => "DIVAZEAECOMMERCE", :token => "04e0b65aa433a319777f37e4ce19a2783600cff2" })
+      userpwd: "username:password",
+      params: { :cl => "DIVAZ", :token => "api token" })
 		req.run
 		req.response.body.gsub!(/"/,'')
 	end
@@ -19,8 +19,8 @@ class Delhivery
 		req = Typhoeus::Request.new(
       URL+"/cmu/push/json/",
       method: :post,
-      userpwd: "DIVAZEAECOMMERCE:delhivery123",
-      params: {"token" => "04e0b65aa433a319777f37e4ce19a2783600cff2"},
+      userpwd: "DIVAZ:delhivery123",
+      params: {"token" => "04e0b65aa43f2"},
       body: {'data' => data.to_json, 'format'=>'json'},
       headers: {'Content-Type' => 'application/x-www-form-urlencoded'}
     )
@@ -32,7 +32,7 @@ class Delhivery
 	def self.fetch_pincodes
 		req = Typhoeus::Request.new(
 			URL+"/c/api/pin-codes/json/",
-      params: {"token" => "04e0b65aa433a319777f37e4ce19a2783600cff2"}
+      params: {"token" => "04e0b65aa433600cff2"}
       )
 		req.run
 		res = ActiveSupport::JSON.decode(req.response.body)
@@ -57,9 +57,9 @@ class Delhivery
 	#To track the orders from delhivery
 	def self.track_order(wbnum)
 		req = Typhoeus::Request.new(URL+"/api/packages/json/",
-      userpwd: "DIVAZEAECOMMERCE:delhivery123",
+      userpwd: "username:password",
       params: {
-      	token: "04e0b65aa433a319777f37e4ce19a2783600cff2",
+      	token: "token",
       	waybill: wbnum
   	 	})
 		req.run		
